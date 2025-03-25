@@ -6,7 +6,7 @@ export load_data, preprocess_data, one_hot_encode, batch_data
 # Constants
 const IMDB_URL = "https://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz"
 const VOCAB_SIZE = 10000
-const MAX_SEQUENCE_LENGTH = 500
+const MAX_SEQUENCE_LENGTH = 200
 
 function download_imdb_dataset()
     # Check if data directory exists

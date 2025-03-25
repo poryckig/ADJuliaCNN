@@ -9,7 +9,7 @@ function softmax(x)
 end
 
 function sigmoid(x)
-    return 1 ./ (1 .+ exp.(-x))
+    return 1.0 ./ (1.0 .+ exp.(-x))
 end
 
 function binary_cross_entropy_loss_with_gradient(predictions, targets)
@@ -38,19 +38,28 @@ function one_hot_to_label(encoded)
     return [argmax(vec) for vec in eachcol(encoded)]
 end
 
+# Modify this function in LossAndAccuracy.jl
 function loss_and_accuracy(ŷ, y)
     # For IMDb sentiment analysis (binary classification)
     if size(y, 1) == 2  # One-hot encoded binary classification
         loss, grad = binary_cross_entropy_loss_with_gradient(ŷ, y)
-        pred_classes = [vec[1] < vec[2] ? 1 : 0 for vec in eachcol(ŷ)]
-        true_classes = [vec[1] < vec[2] ? 1 : 0 for vec in eachcol(y)]
+        
+        # Get predicted class (0 or 1)
+        # Important: Make sure we're doing proper threshold comparison
+        pred_probs = sigmoid(ŷ)  # Convert logits to probabilities
+        pred_classes = [prob[2] > 0.5 ? 1 : 0 for prob in eachcol(pred_probs)]
+        
+        # Get true class from one-hot encoded targets
+        true_classes = [vec[2] > vec[1] ? 1 : 0 for vec in eachcol(y)]
     else  # Multi-class classification (keeping for compatibility)
         loss, grad = cross_entropy_loss_with_gradient(ŷ, y)
         pred_classes = one_hot_to_label(ŷ)
         true_classes = one_hot_to_label(y)
     end
     
-    acc = round(100 * mean(pred_classes .== true_classes), digits=2)
+    # Calculate accuracy
+    acc = mean(pred_classes .== true_classes)
+    
     return loss, acc, grad
 end
 

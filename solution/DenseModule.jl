@@ -1,5 +1,5 @@
 module DenseModule
-using Random
+using Random, LinearAlgebra
 
 export DenseLayer, init_dense_layer, backward_pass, relu, relu_grad, sigmoid, sigmoid_grad, identity, identity_grad
 
@@ -39,17 +39,25 @@ function identity_grad(x)
     return ones(size(x))
 end
 
-function (layer::DenseLayer)(input::Array{Float32,2})
+# Updated to handle different array types
+function (layer::DenseLayer)(input)
+    # Convert input to a standard Array{Float32,2} if it's not already
+    input_matrix = convert(Array{Float32,2}, input)
+    
     # Store intermediate values needed for backpropagation
-    layer.activations = layer.activation(layer.weights * input .+ layer.biases)
-    layer.inputs = input  # Save input to use in the backward pass
+    layer.inputs = input_matrix  # Save input to use in the backward pass
+    layer.activations = layer.activation(layer.weights * input_matrix .+ layer.biases)
+    
     return layer.activations
 end
 
 function init_dense_layer(input_dim::Int, output_dim::Int, activation::Function, activation_grad::Function, seedy::Int)
     Random.seed!(seedy)
 
-    weights = 0.178 * randn(Float32, output_dim, input_dim)
+    # Xavier/Glorot initialization for better convergence
+    scale = sqrt(2.0 / (input_dim + output_dim))
+    weights = scale * randn(Float32, output_dim, input_dim)
+    
     biases = zeros(Float32, output_dim)
     grad_weights = zeros(Float32, output_dim, input_dim)
     grad_biases = zeros(Float32, output_dim)
@@ -58,6 +66,7 @@ function init_dense_layer(input_dim::Int, output_dim::Int, activation::Function,
     return DenseLayer(weights, biases, grad_weights, grad_biases, activation, activation_grad, activations, inputs)
 end
 
+# Implementing the backward pass for the dense layer
 function backward_pass(layer::DenseLayer, d_output::Array{Float32,2})
     # Apply the derivative of the activation function
     d_activation = layer.activation_grad(layer.activations) .* d_output
@@ -67,8 +76,9 @@ function backward_pass(layer::DenseLayer, d_output::Array{Float32,2})
     d_biases = sum(d_activation, dims=2)
     d_input = layer.weights' * d_activation
     
+    # Update gradients
     layer.grad_weights .+= d_weights
-    layer.grad_biases .+= d_biases
+    layer.grad_biases .+= d_biases[:, 1]  # Convert to vector
 
     return Float32.(d_input)
 end
