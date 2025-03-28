@@ -21,7 +21,8 @@ function init_embedding_layer(vocab_size::Int, embedding_dim::Int, seedy::Int)
     Random.seed!(seedy)
     
     # Inicjalizacja wag
-    weights = 0.1f0 * randn(Float32, vocab_size, embedding_dim)
+    scale = sqrt(1.0f0 / embedding_dim)
+    weights = scale * randn(Float32, vocab_size, embedding_dim)
     biases = zeros(Float32, embedding_dim)
     
     grad_weights = zeros(Float32, vocab_size, embedding_dim)

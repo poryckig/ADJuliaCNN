@@ -47,7 +47,7 @@ end
 end
 
 # Zoptymalizowany cross entropy loss z gradientem
-@inline function binary_cross_entropy_loss_with_gradient!(loss, gradient, predictions, targets)
+@inline function binary_cross_entropy_loss_with_gradient!(loss, gradient, predictions, targets, lambda=0.0001f0, network=nothing)
     epsilon = Float32(1e-7)  # Mała wartość dla stabilności
     batch_size = size(targets, 2)
     
@@ -72,6 +72,17 @@ end
         end
     end
     
+    # Dodaj regularyzację L2 jeśli sieć jest dostępna
+    if network !== nothing && lambda > 0.0f0
+        reg_loss = 0.0f0
+        for layer in network
+            if hasproperty(layer, :weights)
+                reg_loss += 0.5f0 * lambda * sum(layer.weights.^2)
+            end
+        end
+        total_loss += reg_loss
+    end
+    
     # Średnia strata
     loss[1] = total_loss / batch_size
     
@@ -79,7 +90,7 @@ end
 end
 
 # Uniwersalna funkcja do obliczania straty i dokładności
-function loss_and_accuracy(ŷ, y)
+function loss_and_accuracy(ŷ, y, network=nothing)
     batch_size = size(y, 2)
     
     # Przygotuj bufory
@@ -88,8 +99,8 @@ function loss_and_accuracy(ŷ, y)
     
     # Dla klasyfikacji binarnej (IMDb sentiment)
     if size(y, 1) == 2
-        # Oblicz stratę i gradienty
-        loss, grad = binary_cross_entropy_loss_with_gradient!(loss_buffer, grad_buffer, ŷ, y)
+        # Oblicz stratę i gradienty z regularyzacją
+        loss, grad = binary_cross_entropy_loss_with_gradient!(loss_buffer, grad_buffer, ŷ, y, 0.0001f0, network)
         
         # Przewidywana klasa
         pred_probs = similar(ŷ)

@@ -164,21 +164,47 @@ function one_hot_encode(targets, classes)
     return one_hot
 end
 
-# Fixed batch_data function to handle vector arrays properly
-function batch_data(data, batch_size::Int; shuffle::Bool=true)
+# Funkcja do rozszerzania danych
+function augment_data(tokens, vocabulary, max_length=MAX_SEQUENCE_LENGTH, dropout_prob=0.1)
+    # Kopia tokenu
+    augmented = copy(tokens)
+    
+    # Losowe usuwanie tokenów (dropout)
+    for i in 1:length(augmented)
+        if augmented[i] > 0 && rand() < dropout_prob
+            augmented[i] = vocabulary["<UNK>"]
+        end
+    end
+    
+    return augmented
+end
+
+# Zaktualizuj funkcję batch_data, aby obsługiwała augmentację
+function batch_data(data, batch_size::Int; shuffle::Bool=true, augment::Bool=true)
     x, y = data
     indices = 1:length(x)
     if shuffle
         indices = Random.shuffle(indices)
     end
     
-    # Create batches of sequences and labels
+    # Przygotuj słownik dla augmentacji (jeśli potrzebne)
+    vocab = Dict("<UNK>" => 2)
+    
+    # Utwórz partie sekwencji i etykiet
     batches = []
     for idx_batch in Iterators.partition(indices, batch_size)
-        # Get the vectors directly without trying to convert them
+        # Przygotuj oryginalny batch
         x_batch = [x[i] for i in idx_batch]
         y_batch = y[:, idx_batch]
-        push!(batches, (x_batch, y_batch))
+        
+        # Jeśli augment jest włączony i jest to trening
+        if augment
+            # Rozszerz dane
+            x_augmented = [augment_data(xi, vocab) for xi in x_batch]
+            push!(batches, (x_augmented, y_batch))
+        else
+            push!(batches, (x_batch, y_batch))
+        end
     end
     
     return batches
