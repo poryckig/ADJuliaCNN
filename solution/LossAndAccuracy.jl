@@ -3,64 +3,113 @@ using Statistics: mean
 
 export loss_and_accuracy, binary_cross_entropy_loss
 
-function softmax(x)
-    exp_x = exp.(x .- maximum(x, dims=1))
-    return exp_x ./ sum(exp_x, dims=1)
-end
+# Super-szybka kompilacja
+Base.Experimental.@optlevel 3
+Base.@propagate_inbounds true
 
-function sigmoid(x)
-    return 1.0 ./ (1.0 .+ exp.(-x))
-end
-
-function binary_cross_entropy_loss_with_gradient(predictions, targets)
-    # Apply sigmoid to get probabilities
-    probabilities = sigmoid(predictions)
+# Ultraszybki softmax
+@inline function fast_softmax!(output, input)
+    # Stabilizacja numeryczna
+    max_val = maximum(input)
+    sum_exp = 0.0f0
     
-    # Calculate binary cross entropy loss
-    epsilon = 1e-15  # Small value to avoid log(0)
-    probabilities = clamp.(probabilities, epsilon, 1-epsilon)
-    loss = -mean(targets .* log.(probabilities) .+ (1 .- targets) .* log.(1 .- probabilities))
-    
-    # Gradient of the loss with respect to predictions
-    gradient = (probabilities .- targets) ./ size(targets, 2)
-    
-    return loss, Float32.(gradient)
-end
-
-function cross_entropy_loss_with_gradient(predictions, targets)
-    probabilities = softmax(predictions)
-    loss = -mean(sum(targets .* log.(probabilities), dims=1))
-    gradient = probabilities - targets
-    return loss, Float32.(gradient)
-end
-
-function one_hot_to_label(encoded)
-    return [argmax(vec) for vec in eachcol(encoded)]
-end
-
-# Modify this function in LossAndAccuracy.jl
-function loss_and_accuracy(ŷ, y)
-    # For IMDb sentiment analysis (binary classification)
-    if size(y, 1) == 2  # One-hot encoded binary classification
-        loss, grad = binary_cross_entropy_loss_with_gradient(ŷ, y)
-        
-        # Get predicted class (0 or 1)
-        # Important: Make sure we're doing proper threshold comparison
-        pred_probs = sigmoid(ŷ)  # Convert logits to probabilities
-        pred_classes = [prob[2] > 0.5 ? 1 : 0 for prob in eachcol(pred_probs)]
-        
-        # Get true class from one-hot encoded targets
-        true_classes = [vec[2] > vec[1] ? 1 : 0 for vec in eachcol(y)]
-    else  # Multi-class classification (keeping for compatibility)
-        loss, grad = cross_entropy_loss_with_gradient(ŷ, y)
-        pred_classes = one_hot_to_label(ŷ)
-        true_classes = one_hot_to_label(y)
+    # Oblicz eksponenty i sumę
+    @inbounds for i in eachindex(input)
+        output[i] = exp(input[i] - max_val)
+        sum_exp += output[i]
     end
     
-    # Calculate accuracy
-    acc = mean(pred_classes .== true_classes)
+    # Normalizuj
+    inv_sum = 1.0f0 / sum_exp
+    @inbounds for i in eachindex(output)
+        output[i] *= inv_sum
+    end
     
-    return loss, acc, grad
+    return output
+end
+
+# Szybki i numerycznie stabilny sigmoid
+@inline function fast_sigmoid(x::Float32)
+    if x >= 0
+        t = exp(-x)
+        return 1.0f0 / (1.0f0 + t)
+    else
+        t = exp(x)
+        return t / (1.0f0 + t)
+    end
+end
+
+@inline function fast_sigmoid!(output, input)
+    @inbounds for i in eachindex(input)
+        output[i] = fast_sigmoid(input[i])
+    end
+    return output
+end
+
+# Zoptymalizowany cross entropy loss z gradientem
+@inline function binary_cross_entropy_loss_with_gradient!(loss, gradient, predictions, targets)
+    epsilon = Float32(1e-7)  # Mała wartość dla stabilności
+    batch_size = size(targets, 2)
+    
+    # Tymczasowe bufory dla prawdopodobieństw
+    probs = similar(predictions)
+    fast_sigmoid!(probs, predictions)
+    
+    # Oblicz straty i gradienty
+    total_loss = 0.0f0
+    
+    @inbounds for j in 1:size(targets, 2)
+        @inbounds for i in 1:size(targets, 1)
+            # Przycinanie dla stabilności numerycznej
+            p = max(min(probs[i, j], 1.0f0 - epsilon), epsilon)
+            t = targets[i, j]
+            
+            # Strata
+            total_loss -= t * log(p) + (1.0f0 - t) * log(1.0f0 - p)
+            
+            # Gradient
+            gradient[i, j] = p - t
+        end
+    end
+    
+    # Średnia strata
+    loss[1] = total_loss / batch_size
+    
+    return loss[1], gradient
+end
+
+# Uniwersalna funkcja do obliczania straty i dokładności
+function loss_and_accuracy(ŷ, y)
+    batch_size = size(y, 2)
+    
+    # Przygotuj bufory
+    loss_buffer = [0.0f0]
+    grad_buffer = similar(ŷ)
+    
+    # Dla klasyfikacji binarnej (IMDb sentiment)
+    if size(y, 1) == 2
+        # Oblicz stratę i gradienty
+        loss, grad = binary_cross_entropy_loss_with_gradient!(loss_buffer, grad_buffer, ŷ, y)
+        
+        # Przewidywana klasa
+        pred_probs = similar(ŷ)
+        fast_sigmoid!(pred_probs, ŷ)
+        
+        # Oblicz dokładność
+        correct = 0
+        @inbounds for j in 1:size(y, 2)
+            pred_class = pred_probs[2, j] > 0.5f0 ? 1 : 0
+            true_class = y[2, j] > y[1, j] ? 1 : 0
+            correct += pred_class == true_class ? 1 : 0
+        end
+        
+        accuracy = correct / batch_size
+    else
+        # Dla innych przypadków (kompatybilność)
+        error("Only binary classification supported in this optimized version")
+    end
+    
+    return loss, accuracy, grad_buffer
 end
 
 end

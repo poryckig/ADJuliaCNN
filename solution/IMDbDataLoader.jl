@@ -6,16 +6,13 @@ export load_data, preprocess_data, one_hot_encode, batch_data
 # Constants
 const IMDB_URL = "https://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz"
 const VOCAB_SIZE = 10000
-const MAX_SEQUENCE_LENGTH = 200
+const MAX_SEQUENCE_LENGTH = 100  # Reduced for performance
 
 function download_imdb_dataset()
-    # Check if data directory exists
     data_dir = joinpath(@__DIR__, "data", "imdb")
     
     if !isdir(data_dir)
         println("IMDb dataset not found. Downloading...")
-        
-        # Create directories
         mkpath(data_dir)
         
         # Download the dataset
@@ -37,6 +34,7 @@ function download_imdb_dataset()
 end
 
 function build_vocabulary(data_dir, max_words=VOCAB_SIZE)
+    println("Building vocabulary...")
     # Collect all text files
     all_texts = String[]
     
@@ -79,6 +77,7 @@ function build_vocabulary(data_dir, max_words=VOCAB_SIZE)
 end
 
 function load_data(split::Symbol)
+    println("Processing $(split) data...")
     # Load or download dataset
     data_dir = download_imdb_dataset()
     
@@ -147,8 +146,8 @@ function tokenize_and_pad(text, vocabulary, max_length=MAX_SEQUENCE_LENGTH)
 end
 
 function preprocess_data(features, targets; one_hot::Bool=true)
-    # Keep features as integers (don't convert to Float32)
-    x = features
+    # Convert features to Float32 arrays
+    x = [Float32.(feature) for feature in features]
     
     # One-hot encode targets if requested
     y = one_hot ? one_hot_encode(targets, 0:1) : targets
@@ -157,7 +156,7 @@ function preprocess_data(features, targets; one_hot::Bool=true)
 end
 
 function one_hot_encode(targets, classes)
-    one_hot = zeros(Int, length(classes), length(targets))
+    one_hot = zeros(Float32, length(classes), length(targets))
     for (i, class) in enumerate(classes)
         filter_indices = findall(x -> x == class, targets)
         one_hot[i, filter_indices] .= 1
@@ -165,6 +164,7 @@ function one_hot_encode(targets, classes)
     return one_hot
 end
 
+# Fixed batch_data function to handle vector arrays properly
 function batch_data(data, batch_size::Int; shuffle::Bool=true)
     x, y = data
     indices = 1:length(x)
@@ -175,6 +175,7 @@ function batch_data(data, batch_size::Int; shuffle::Bool=true)
     # Create batches of sequences and labels
     batches = []
     for idx_batch in Iterators.partition(indices, batch_size)
+        # Get the vectors directly without trying to convert them
         x_batch = [x[i] for i in idx_batch]
         y_batch = y[:, idx_batch]
         push!(batches, (x_batch, y_batch))
